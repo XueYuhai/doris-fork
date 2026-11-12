@@ -91,15 +91,20 @@ teamcity_current_enqueue() {
 teamcity_current_trigger() (
     set -euo pipefail
     set +x
-    local lane=$1 count=${2:-1} params
+    local lane=$1 count=${2:-1} params type
     [[ $PULL_REQUEST_NUM =~ ^[1-9][0-9]*$ && $COMMIT_ID_FROM_TRIGGER =~ ^[0-9a-f]{40}$ && $count =~ ^[1-9][0-9]*$ && $count -le 20 ]]
     [[ " ${targetBranch_to_pipelines[$PULL_REQUEST_TARGET_BRANCH]:-} " == *" $lane "* ]] || {
         echo "No pipeline for $lane on $PULL_REQUEST_TARGET_BRANCH" >&2; exit 1;
     }
-    # Artifact lookup belongs to the pipeline; only submit the requested lane here.
     local TC_FIELDS='id,revisions(revision(version)),properties(property(name,value))'
+    type=${comment_to_pipeline[$lane]}
     params=$(jq -cn --arg pr "$PULL_REQUEST_NUM" --arg branch "$PULL_REQUEST_TARGET_BRANCH" '{"env.PR_NUMBER":$pr,"env.CI_BRANCH":$branch}')
-    teamcity_current_enqueue "${comment_to_pipeline[$lane]}" "$params" "$count"
+    if [[ $lane == vault_p0 ]]; then
+        # Compile publishes the exact PR artifacts and dispatches only VaultP0.
+        type=${comment_to_pipeline[compile]}
+        params=$(jq -c --arg lane "$lane" '. + {regression_targets: $lane}' <<< "$params")
+    fi
+    teamcity_current_enqueue "$type" "$params" "$count"
 )
 
 skip_build() {
